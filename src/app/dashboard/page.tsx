@@ -34,7 +34,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (status !== "authenticated") return;
-    fetch("/api/repos")
+    fetch("/api/repos/connected")
       .then((r) => r.json())
       .then((data) => {
         setRepos(data);

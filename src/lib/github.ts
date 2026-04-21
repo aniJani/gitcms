@@ -1,5 +1,11 @@
 import { Octokit } from "@octokit/rest";
 import { ContentItem, RepoInfo, GitHubFileInfo, TemplateFile } from "./types";
+import { hasConfig } from "./gitcms-config";
+
+// Repos named any of these are never shown as connectable sites, even if
+// they happen to contain a .gitcms/config.json. Belt-and-braces against
+// pointing GitCMS at its own source.
+const DENYLIST = new Set(["gitcms"]);
 
 export function createOctokit(accessToken: string) {
   return new Octokit({ auth: accessToken });
@@ -22,6 +28,22 @@ export async function listUserRepos(
     url: repo.html_url,
     defaultBranch: repo.default_branch,
   }));
+}
+
+export async function listConnectedRepos(
+  octokit: Octokit,
+): Promise<RepoInfo[]> {
+  const all = await listUserRepos(octokit);
+  const candidates = all.filter((r) => !DENYLIST.has(r.name.toLowerCase()));
+
+  const checks = await Promise.allSettled(
+    candidates.map((r) => hasConfig(octokit, r.owner, r.name)),
+  );
+
+  return candidates.filter((_, i) => {
+    const result = checks[i];
+    return result.status === "fulfilled" && result.value === true;
+  });
 }
 
 export async function listContentByType(
