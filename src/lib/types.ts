@@ -30,6 +30,18 @@ export interface GitHubFileInfo {
   type: "file" | "dir";
 }
 
+export interface GitCMSConfig {
+  version: 1;
+  template: string;
+  contentTypes: string[];
+  createdAt: string;
+}
+
+export interface TemplateFile {
+  path: string;
+  content: string;
+}
+
 export interface ContentSchema {
   name: string;
   pluralName: string;

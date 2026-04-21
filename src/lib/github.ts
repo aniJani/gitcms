@@ -1,5 +1,5 @@
 import { Octokit } from "@octokit/rest";
-import { ContentItem, RepoInfo, GitHubFileInfo } from "./types";
+import { ContentItem, RepoInfo, GitHubFileInfo, TemplateFile } from "./types";
 
 export function createOctokit(accessToken: string) {
   return new Octokit({ auth: accessToken });
@@ -129,6 +129,76 @@ export async function saveContentItem(
     console.error("Failed to save content:", error);
     return { success: false };
   }
+}
+
+export async function createRepoWithTemplate(
+  octokit: Octokit,
+  opts: {
+    name: string;
+    description?: string;
+    private?: boolean;
+    files: TemplateFile[];
+  },
+): Promise<RepoInfo> {
+  const { data: user } = await octokit.users.getAuthenticated();
+  const owner = user.login;
+
+  const { data: repo } = await octokit.repos.createForAuthenticatedUser({
+    name: opts.name,
+    description: opts.description,
+    private: opts.private ?? false,
+    auto_init: false,
+  });
+
+  const blobs = await Promise.all(
+    opts.files.map(async (f) => {
+      const { data } = await octokit.git.createBlob({
+        owner,
+        repo: opts.name,
+        content: Buffer.from(f.content, "utf-8").toString("base64"),
+        encoding: "base64",
+      });
+      return { path: f.path, sha: data.sha };
+    }),
+  );
+
+  const { data: tree } = await octokit.git.createTree({
+    owner,
+    repo: opts.name,
+    tree: blobs.map((b) => ({
+      path: b.path,
+      mode: "100644",
+      type: "blob",
+      sha: b.sha,
+    })),
+  });
+
+  const { data: commit } = await octokit.git.createCommit({
+    owner,
+    repo: opts.name,
+    message: "Initial commit: scaffolded by GitCMS",
+    tree: tree.sha,
+    parents: [],
+  });
+
+  // default_branch is always populated on the create response; honor it
+  // rather than overriding with a hardcoded name.
+  await octokit.git.createRef({
+    owner,
+    repo: opts.name,
+    ref: `refs/heads/${repo.default_branch}`,
+    sha: commit.sha,
+  });
+
+  return {
+    owner,
+    name: repo.name,
+    fullName: repo.full_name,
+    description: repo.description,
+    private: repo.private,
+    url: repo.html_url,
+    defaultBranch: repo.default_branch,
+  };
 }
 
 export async function deleteContentItem(
