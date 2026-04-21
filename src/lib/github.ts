@@ -165,12 +165,41 @@ export async function createRepoWithTemplate(
   const { data: user } = await octokit.users.getAuthenticated();
   const owner = user.login;
 
+  // auto_init=true is required: the Git Data API (createBlob etc.) 409s on a
+  // repo with no commits, so we let GitHub create the initial README commit,
+  // then chain our scaffold commit as its child and fast-forward the branch.
   const { data: repo } = await octokit.repos.createForAuthenticatedUser({
     name: opts.name,
     description: opts.description,
     private: opts.private ?? false,
-    auto_init: false,
+    auto_init: true,
   });
+
+  const branch = repo.default_branch;
+
+  // Brief retry on getRef: GitHub sometimes returns 404 for a beat after
+  // auto_init before the ref is readable.
+  let parentSha: string | null = null;
+  for (let attempt = 0; attempt < 5 && !parentSha; attempt++) {
+    try {
+      const { data: ref } = await octokit.git.getRef({
+        owner,
+        repo: opts.name,
+        ref: `heads/${branch}`,
+      });
+      parentSha = ref.object.sha;
+    } catch (err) {
+      const status =
+        err && typeof err === "object" && "status" in err
+          ? (err as { status?: number }).status
+          : undefined;
+      if (status !== 404) throw err;
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
+  }
+  if (!parentSha) {
+    throw new Error("Timed out waiting for initial commit after auto_init");
+  }
 
   const blobs = await Promise.all(
     opts.files.map(async (f) => {
@@ -184,6 +213,8 @@ export async function createRepoWithTemplate(
     }),
   );
 
+  // Building the tree without base_tree means our scaffold fully replaces the
+  // auto-init README — the user sees exactly the template layout at HEAD.
   const { data: tree } = await octokit.git.createTree({
     owner,
     repo: opts.name,
@@ -198,17 +229,15 @@ export async function createRepoWithTemplate(
   const { data: commit } = await octokit.git.createCommit({
     owner,
     repo: opts.name,
-    message: "Initial commit: scaffolded by GitCMS",
+    message: "Scaffold site from GitCMS template",
     tree: tree.sha,
-    parents: [],
+    parents: [parentSha],
   });
 
-  // default_branch is always populated on the create response; honor it
-  // rather than overriding with a hardcoded name.
-  await octokit.git.createRef({
+  await octokit.git.updateRef({
     owner,
     repo: opts.name,
-    ref: `refs/heads/${repo.default_branch}`,
+    ref: `heads/${branch}`,
     sha: commit.sha,
   });
 
@@ -219,7 +248,7 @@ export async function createRepoWithTemplate(
     description: repo.description,
     private: repo.private,
     url: repo.html_url,
-    defaultBranch: repo.default_branch,
+    defaultBranch: branch,
   };
 }
 
