@@ -6,6 +6,21 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/repos/scaffold": ["./templates/next-blog/**/*"],
   },
+
+  // Cross-origin isolation is required for @webcontainer/api (SharedArrayBuffer,
+  // WASM threads). Scope strictly to /editor/* so NextAuth's OAuth redirect and
+  // anything that embeds external origins stays unaffected.
+  async headers() {
+    return [
+      {
+        source: "/editor/:path*",
+        headers: [
+          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;
