@@ -9,7 +9,24 @@ import {
 } from "react";
 import type { WebContainer, FileSystemTree } from "@webcontainer/api";
 import BootLog from "./BootLog";
-import { Loader2, AlertTriangle, RefreshCw } from "lucide-react";
+import {
+  Loader2,
+  AlertTriangle,
+  RefreshCw,
+  Monitor,
+  Tablet,
+  Smartphone,
+  Maximize2,
+  Minimize2,
+  ExternalLink,
+} from "lucide-react";
+
+type Device = "desktop" | "tablet" | "mobile";
+const DEVICE_WIDTH: Record<Device, string> = {
+  desktop: "100%",
+  tablet: "768px",
+  mobile: "390px",
+};
 
 export interface PreviewPaneHandle {
   writeFile: (path: string, content: string) => Promise<void>;
@@ -159,7 +176,18 @@ const PreviewPane = forwardRef<PreviewPaneHandle, Props>(function PreviewPane(
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [iframeNonce, setIframeNonce] = useState(0);
+  const [device, setDevice] = useState<Device>("desktop");
+  const [fullscreen, setFullscreen] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFullscreen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
 
   // Per-path write queue so `mkdir → writeFile` for the same file can't
   // interleave with a subsequent call and end up with stale bytes winning.
@@ -297,27 +325,87 @@ const PreviewPane = forwardRef<PreviewPaneHandle, Props>(function PreviewPane(
 
       {status === "error" ? (
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
-          {error}
+          <p className="mb-2">{error}</p>
+          {owner && repo && (
+            <a
+              href={`https://github.com/${owner}/${repo}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-red-900 underline"
+            >
+              <ExternalLink size={12} />
+              View repository on GitHub
+            </a>
+          )}
         </div>
       ) : status === "ready" && previewUrl ? (
-        <div className="flex flex-1 flex-col gap-2 overflow-hidden">
-          <iframe
-            ref={iframeRef}
-            key={iframeNonce}
-            src={
-              previewPath
-                ? `${previewUrl.replace(/\/$/, "")}/${previewPath}`
-                : previewUrl
-            }
-            title="Live preview"
-            className="min-h-[400px] w-full flex-1 rounded-lg border border-gray-200 bg-white"
-          />
-          <details className="shrink-0">
-            <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700">
-              Dev server log
-            </summary>
-            <BootLog lines={logs} className="mt-1 max-h-40" />
-          </details>
+        <div
+          className={
+            fullscreen
+              ? "fixed inset-0 z-50 flex flex-col gap-2 bg-gray-100 p-4"
+              : "flex flex-1 flex-col gap-2 overflow-hidden"
+          }
+        >
+          <div
+            role="group"
+            aria-label="Device size"
+            className="flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-white p-1 text-sm"
+          >
+            {(["desktop", "tablet", "mobile"] as const).map((d) => {
+              const Icon =
+                d === "desktop" ? Monitor : d === "tablet" ? Tablet : Smartphone;
+              return (
+                <button
+                  key={d}
+                  type="button"
+                  onClick={() => setDevice(d)}
+                  aria-pressed={device === d}
+                  title={d[0].toUpperCase() + d.slice(1)}
+                  className={`flex items-center gap-1 rounded px-2 py-1 ${
+                    device === d
+                      ? "bg-blue-50 text-blue-700"
+                      : "text-gray-500 hover:bg-gray-50"
+                  }`}
+                >
+                  <Icon size={14} />
+                </button>
+              );
+            })}
+            <div className="mx-1 h-4 w-px bg-gray-200" />
+            <button
+              type="button"
+              onClick={() => setFullscreen((f) => !f)}
+              title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
+              className="flex items-center gap-1 rounded px-2 py-1 text-gray-500 hover:bg-gray-50"
+            >
+              {fullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            </button>
+          </div>
+          <div className="flex flex-1 items-start justify-center overflow-auto">
+            <iframe
+              ref={iframeRef}
+              key={iframeNonce}
+              src={
+                previewPath
+                  ? `${previewUrl.replace(/\/$/, "")}/${previewPath}`
+                  : previewUrl
+              }
+              title="Live preview"
+              style={{
+                width: DEVICE_WIDTH[device],
+                maxWidth: "100%",
+              }}
+              className="h-full min-h-[400px] rounded-lg border border-gray-200 bg-white shadow-sm"
+            />
+          </div>
+          {!fullscreen && (
+            <details className="shrink-0">
+              <summary className="cursor-pointer text-xs text-gray-500 hover:text-gray-700">
+                Dev server log
+              </summary>
+              <BootLog lines={logs} className="mt-1 max-h-40" />
+            </details>
+          )}
         </div>
       ) : (
         <BootLog lines={logs} className="h-full min-h-[240px] flex-1" />
