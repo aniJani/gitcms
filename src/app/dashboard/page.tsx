@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
+import NewSiteDialog from "@/components/NewSiteDialog";
 import {
   GitBranch,
   FileText,
@@ -27,6 +28,7 @@ export default function DashboardPage() {
   >({});
   const [loading, setLoading] = useState(true);
   const [loadingContent, setLoadingContent] = useState(false);
+  const [newSiteOpen, setNewSiteOpen] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
@@ -83,9 +85,18 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
           {/* Repo List */}
           <div className="lg:col-span-1">
-            <h2 className="mb-4 text-lg font-semibold text-gray-900">
-              Your Repositories
-            </h2>
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Your Sites
+              </h2>
+              <button
+                onClick={() => setNewSiteOpen(true)}
+                className="flex items-center gap-1 rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                <Plus size={14} />
+                New Site
+              </button>
+            </div>
             <div className="space-y-2">
               {repos.map((repo) => (
                 <button
@@ -116,7 +127,13 @@ export default function DashboardPage() {
                 </button>
               ))}
               {repos.length === 0 && (
-                <p className="text-sm text-gray-500">No repositories found.</p>
+                <div className="rounded-lg border border-dashed border-gray-300 p-4 text-center">
+                  <p className="text-sm text-gray-500">
+                    No sites yet. Click{" "}
+                    <span className="font-medium text-gray-700">New Site</span>{" "}
+                    to scaffold your first one.
+                  </p>
+                </div>
               )}
             </div>
           </div>
@@ -200,6 +217,17 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+      <NewSiteDialog
+        open={newSiteOpen}
+        onClose={() => setNewSiteOpen(false)}
+        onCreated={(repo) => {
+          setNewSiteOpen(false);
+          setRepos((prev) => [repo, ...prev]);
+          router.push(
+            `/editor/posts/new?owner=${repo.owner}&repo=${repo.name}`,
+          );
+        }}
+      />
     </>
   );
 }
