@@ -1,0 +1,8 @@
+{
+  "title": "Hello, world",
+  "body": "<p>Welcome to your new site. This post was created by the GitCMS scaffolder — you can edit or delete it from the GitCMS dashboard.</p><p>Every change is a commit in this repository, so you get full version history for free.</p>",
+  "excerpt": "Welcome to your new site, scaffolded by GitCMS.",
+  "status": "published",
+  "createdAt": "2026-04-21T00:00:00.000Z",
+  "updatedAt": "2026-04-21T00:00:00.000Z"
+}
