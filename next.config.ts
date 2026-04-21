@@ -19,6 +19,22 @@ const nextConfig: NextConfig = {
           { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
         ],
       },
+      // Sub-resources must advertise a Cross-Origin-Resource-Policy for
+      // crossOriginIsolated to evaluate true on pages that load them,
+      // otherwise the browser silently downgrades. Next's static assets and
+      // our own API/image routes need this for the /editor/* COI to hold.
+      {
+        source: "/_next/:path*",
+        headers: [
+          { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
+        ],
+      },
+      {
+        source: "/api/:path*",
+        headers: [
+          { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
+        ],
+      },
     ];
   },
 };

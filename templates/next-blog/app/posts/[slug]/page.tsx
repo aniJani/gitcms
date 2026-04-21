@@ -14,7 +14,11 @@ export default async function PostPage({
   const { slug } = await params;
   const post = getContent("posts", slug);
 
-  if (!post || post.status !== "published") notFound();
+  // Drafts only render in the CMS preview (GITCMS_PREVIEW=1 is set by the
+  // WebContainer boot env). On a production deploy this variable is absent,
+  // so unpublished slugs 404 as expected.
+  const allowDrafts = process.env.GITCMS_PREVIEW === "1";
+  if (!post || (!allowDrafts && post.status !== "published")) notFound();
 
   return (
     <article>

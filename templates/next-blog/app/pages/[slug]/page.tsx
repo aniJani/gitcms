@@ -13,7 +13,8 @@ export default async function StaticPage({
   const { slug } = await params;
   const page = getContent("pages", slug);
 
-  if (!page || page.status !== "published") notFound();
+  const allowDrafts = process.env.GITCMS_PREVIEW === "1";
+  if (!page || (!allowDrafts && page.status !== "published")) notFound();
 
   return (
     <article>

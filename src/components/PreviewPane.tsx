@@ -1,9 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import type { WebContainer, FileSystemTree } from "@webcontainer/api";
 import BootLog from "./BootLog";
 import { Loader2, AlertTriangle, RefreshCw } from "lucide-react";
+
+export interface PreviewPaneHandle {
+  writeFile: (path: string, content: string) => Promise<void>;
+}
 
 type Status =
   | "loading-bundle"
@@ -16,6 +26,8 @@ type Status =
 interface Props {
   owner: string;
   repo: string;
+  /** Optional path inside the previewed site, e.g. "posts/hello-world". */
+  path?: string;
 }
 
 // WebContainer.boot() is a singleton per page. Beyond that, the entire
@@ -104,7 +116,11 @@ async function getPipeline(owner: string, repo: string): Promise<PipelineHandle>
     }
 
     broadcast("\n$ npm run dev\n");
-    const dev = await container.spawn("npm", ["run", "dev"]);
+    const dev = await container.spawn("npm", ["run", "dev"], {
+      // The template gates draft visibility on this env var so unpublished
+      // content renders in the CMS preview but 404s on a production deploy.
+      env: { GITCMS_PREVIEW: "1" },
+    });
     dev.output.pipeTo(
       new WritableStream({ write: (chunk) => broadcast(chunk) }),
     );
@@ -121,15 +137,23 @@ async function getPipeline(owner: string, repo: string): Promise<PipelineHandle>
   return promise;
 }
 
-function isSupportedBrowser(): boolean {
-  if (typeof window === "undefined") return false;
-  if (!window.crossOriginIsolated) return false;
+function unsupportedReason(): string | null {
+  if (typeof window === "undefined") return "Server-side render";
   const ua = navigator.userAgent;
   const isSafari = /^((?!chrome|android).)*safari/i.test(ua);
-  return !isSafari;
+  if (isSafari) {
+    return "Live preview requires Chrome or Firefox (Safari lacks the threading primitives WebContainer needs).";
+  }
+  if (!window.crossOriginIsolated) {
+    return "Cross-origin isolation failed. Check that all sub-resources send Cross-Origin-Resource-Policy — reload after a config fix.";
+  }
+  return null;
 }
 
-export default function PreviewPane({ owner, repo }: Props) {
+const PreviewPane = forwardRef<PreviewPaneHandle, Props>(function PreviewPane(
+  { owner, repo, path: previewPath },
+  ref,
+) {
   const [status, setStatus] = useState<Status>("loading-bundle");
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -137,14 +161,44 @@ export default function PreviewPane({ owner, repo }: Props) {
   const [iframeNonce, setIframeNonce] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
+  // Per-path write queue so `mkdir → writeFile` for the same file can't
+  // interleave with a subsequent call and end up with stale bytes winning.
+  const writeChainsRef = useRef<Map<string, Promise<void>>>(new Map());
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      writeFile: async (filePath: string, content: string) => {
+        const pipeline = pipelines.get(`${owner}/${repo}`);
+        if (!pipeline) return;
+        const handle = await pipeline;
+        const prev = writeChainsRef.current.get(filePath) ?? Promise.resolve();
+        const next = prev
+          .catch(() => undefined)
+          .then(async () => {
+            const dir = filePath.includes("/")
+              ? filePath.replace(/\/[^/]+$/, "")
+              : "";
+            if (dir) {
+              await handle.container.fs.mkdir(dir, { recursive: true });
+            }
+            await handle.container.fs.writeFile(filePath, content);
+            setIframeNonce((n) => n + 1);
+          });
+        writeChainsRef.current.set(filePath, next);
+        await next;
+      },
+    }),
+    [owner, repo],
+  );
+
   useEffect(() => {
     let cancelled = false;
 
-    if (!isSupportedBrowser()) {
+    const reason = unsupportedReason();
+    if (reason) {
       setStatus("error");
-      setError(
-        "Live preview requires Chrome or Firefox with cross-origin isolation.",
-      );
+      setError(reason);
       return;
     }
 
@@ -250,7 +304,11 @@ export default function PreviewPane({ owner, repo }: Props) {
           <iframe
             ref={iframeRef}
             key={iframeNonce}
-            src={previewUrl}
+            src={
+              previewPath
+                ? `${previewUrl.replace(/\/$/, "")}/${previewPath}`
+                : previewUrl
+            }
             title="Live preview"
             className="min-h-[400px] w-full flex-1 rounded-lg border border-gray-200 bg-white"
           />
@@ -266,4 +324,6 @@ export default function PreviewPane({ owner, repo }: Props) {
       )}
     </div>
   );
-}
+});
+
+export default PreviewPane;
