@@ -252,6 +252,21 @@ export async function createRepoWithTemplate(
   };
 }
 
+export async function getRawFile(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  path: string,
+): Promise<string | null> {
+  try {
+    const { data } = await octokit.repos.getContent({ owner, repo, path });
+    if (Array.isArray(data) || data.type !== "file") return null;
+    return Buffer.from(data.content, "base64").toString("utf-8");
+  } catch {
+    return null;
+  }
+}
+
 export async function deleteContentItem(
   octokit: Octokit,
   owner: string,
